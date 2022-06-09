@@ -679,6 +679,7 @@ build/
 # End of https://www.gitignore.io/api/visualstudio,unrealengine
 
 
-# 임시
-*/Content/*
-*.uproject
+#임시
+*/Content/PalaceWorld/Blueprints
+*/Content/PalaceWorld/Resources/Adam_Adventurer
+*/Content/PalaceWorld/Resources/ParagonRampage
