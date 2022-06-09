@@ -679,6 +679,3 @@ build/
 # End of https://www.gitignore.io/api/visualstudio,unrealengine
 
 
-#임시
-*/Content/PalaceWorld/Blueprints
-
