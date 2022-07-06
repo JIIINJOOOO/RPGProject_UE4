@@ -40,12 +40,13 @@ public:
 	FOnBowAttackShootArrowDelegate OnBowShootArrowCheck;
 
 	void SetDeadAnim() { bIsDead = true; }
-	void SetSprintAnim(bool bPressedShift) { bIsSprinting = bPressedShift; }
-	void SetUsingShieldAnim(bool bPressedRightClick) { bUsingShield = bPressedRightClick; }
-	void SetAimingArrowAnim(bool bPressedRightClick) { bAimingArrow = bPressedRightClick; }
+	//UFUNCTION(NetMulticast, reliable, WithValidation)
+	void SetSprintAnim(bool bPressedShift);
+	void SetUsingShieldAnim(bool bPressedRightClick) { bIsUsingShield = bPressedRightClick; }
+	void SetAimingArrowAnim(bool bPressedRightClick) { bIsAimingArrow = bPressedRightClick; }
 	void SetChangingWeapon(bool bPressedNumKey) { bIsChangingWeapon = bPressedNumKey; }
-	bool GetbUsingShield() { return bUsingShield; }
-	bool GetbAimingArrow() { return bAimingArrow; }
+	bool GetbUsingShield() { return bIsUsingShield; }
+	bool GetbAimingArrow() { return bIsAimingArrow; }
 	bool GetbIsSprinting() { return bIsSprinting; }
 	bool GetbIsChangingWeapon() { return bIsChangingWeapon; }
 	
@@ -94,10 +95,10 @@ private:
 
 	// 무기에 따라 다른 특수기능 - state machine으로 처리
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
-	bool bUsingShield; // right click
+	bool bIsUsingShield; // right click
 	
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
-	bool bAimingArrow; // right click
+	bool bIsAimingArrow; // right click
 
 	
 

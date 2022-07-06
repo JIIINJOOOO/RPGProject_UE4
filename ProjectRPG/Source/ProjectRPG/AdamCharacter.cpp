@@ -18,15 +18,19 @@
 #include "Camera/CameraComponent.h"
 #include "Components/WidgetComponent.h"
 #include "AdamCharacterWidget.h"
+#include "Net/UnrealNetwork.h"
 
 
 // 캐릭터 무브먼트 관련 기본값들
 constexpr float fWalkSpeed = 300.f;
+constexpr float fSprintAcceleration = 521.f;
 constexpr float fAcceleration = 2048.f;
 constexpr float fDeceleration = 521.f;
+constexpr float fRunningSpeedModifier = 1.5f;
 
 // Sets default values
-AAdamCharacter::AAdamCharacter()
+AAdamCharacter::AAdamCharacter(const FObjectInitializer& ObjectInitializer) 
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UAdamCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
@@ -166,6 +170,10 @@ AAdamCharacter::AAdamCharacter()
 	// 기본 무기 소드앤실드 -> 등에는 안보이게
 	Sword->SetVisibility(false);
 	Shield->SetVisibility(false);
+
+	
+	//네트워크 리플리케이션 위한 변수
+	bIsSprinting = false;
 	
 }
 
@@ -216,13 +224,21 @@ void AAdamCharacter::BeginPlay()
 		}
 
 		CharacterStat->SetNewLevel(3);
+
+		// 네트워크 리플리케이트 관련
+		if (HasAuthority())
+		{
+			SetReplicates(true);
+			SetReplicateMovement(true);
+			GetCharacterMovement()->SetIsReplicated(true);
+		}
 }
 
 // Called every frame
 void AAdamCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
+	
 }
 
 void AAdamCharacter::PostInitializeComponents()
@@ -288,6 +304,28 @@ float AAdamCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageE
 void AAdamCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+	check(PlayerInputComponent);
+	PlayerInputComponent->BindAxis(TEXT("MoveFB"), this, &AAdamCharacter::MoveFB);
+	PlayerInputComponent->BindAxis(TEXT("MoveLR"), this, &AAdamCharacter::MoveLR);
+
+	PlayerInputComponent->BindAction(TEXT("Jump"), IE_Pressed, this, &AAdamCharacter::Jump);
+	PlayerInputComponent->BindAction(TEXT("Jump"), IE_Released, this, &AAdamCharacter::StopJumping);
+
+	PlayerInputComponent->BindAxis(TEXT("LookUp"), this, &AAdamCharacter::AddControllerPitchInput);
+	PlayerInputComponent->BindAxis(TEXT("Turn"), this, &AAdamCharacter::AddControllerYawInput);
+
+	PlayerInputComponent->BindAction(TEXT("Sprint"), IE_Pressed, this, &AAdamCharacter::OnStartSprinting);
+	PlayerInputComponent->BindAction(TEXT("Sprint"), IE_Released, this, &AAdamCharacter::OnStopSprinting);
+
+	PlayerInputComponent->BindAction(TEXT("Attack"), IE_Pressed, this, &AAdamCharacter::Attack);
+
+	PlayerInputComponent->BindAction(TEXT("WeaponAbility"), IE_Pressed, this, &AAdamCharacter::OnUseWeaponAbility);
+	PlayerInputComponent->BindAction(TEXT("WeaponAbility"), IE_Released, this, &AAdamCharacter::OnStopWeaponAbility);
+
+	// 무기전환 : 숫자키
+	PlayerInputComponent->BindAction(TEXT("SwordAndShieldMode"), IE_Pressed, this, &AAdamCharacter::OnSwordAndShieldMode);
+	PlayerInputComponent->BindAction(TEXT("BowMode"), IE_Pressed, this, &AAdamCharacter::OnBowMode);
+
 
 }
 
@@ -306,7 +344,7 @@ void AAdamCharacter::MoveLR(float NewAxisValue)
 void AAdamCharacter::Attack()
 {
 	if (AdamAnim->GetbIsSprinting())
-		StopSprinting();
+		SetSprinting(false);
 	switch (CurWeaponType) {
 	case EWeaponType::E_SWORDSHIELD :
 		if (bIsAttacking)
@@ -342,74 +380,300 @@ void AAdamCharacter::Attack()
 	
 }
 
-void AAdamCharacter::Sprint()
+void AAdamCharacter::OnStartSprinting()
 {
-	if (!bIsAttacking && !(AdamAnim->GetbUsingShield()))
+	AAdamPlayerController* MyPC = Cast<AAdamPlayerController>(Controller);
+	if (MyPC)
 	{
-		if (GetVelocity().Size() != 0.0f) {
-			GetCharacterMovement()->MaxAcceleration = 521.f;
-			GetCharacterMovement()->MaxWalkSpeed = fWalkSpeed * 2;
-			AdamAnim->SetSprintAnim(true);
-		}
+		SetSprinting(true);
 	}
 }
 
-void AAdamCharacter::StopSprinting()
+void AAdamCharacter::OnStopSprinting()
 {
-	GetCharacterMovement()->MaxWalkSpeed = fWalkSpeed;
-	AdamAnim->SetSprintAnim(false);
-
-	
-	GetCharacterMovement()->MaxAcceleration = fAcceleration;
-
-
+	SetSprinting(false);
 }
 
-void AAdamCharacter::UseWeaponAbility()
+void AAdamCharacter::OnUseWeaponAbility()
 {
-	if (!bIsAttacking) {
-		if (AdamAnim->GetbIsSprinting())
-			StopSprinting();
-		if (CurWeaponType == EWeaponType::E_SWORDSHIELD) // 방패막기
-		{	
-			AdamAnim->SetUsingShieldAnim(true);
-		}
-		else if (CurWeaponType == EWeaponType::E_BOW)
+	AAdamPlayerController* MyPC = Cast<AAdamPlayerController>(Controller);
+	if (MyPC)
+	{
+		if (CurWeaponType == EWeaponType::E_SWORDSHIELD)
 		{
-			AdamAnim->SetAimingArrowAnim(true);
+			SetUsingShield(true);
+		}
+		else if(CurWeaponType == EWeaponType::E_BOW)
+		{
+			SetAimingArrow(true);
 		}
 	}
 }
-
-void AAdamCharacter::StopWeaponAbility()
-{
-	if (CurWeaponType == EWeaponType::E_SWORDSHIELD) // 방패막기
-	{
-		AdamAnim->SetUsingShieldAnim(false);
-	}
-	else if (CurWeaponType == EWeaponType::E_BOW)
-	{
-		AdamAnim->SetAimingArrowAnim(false);
-	}
-}
-
-void AAdamCharacter::SwordAndShieldMode()
+void AAdamCharacter::OnStopWeaponAbility()
 {
 	if (CurWeaponType == EWeaponType::E_SWORDSHIELD)
-		return;
-	AdamAnim->PlayChangeWeaponMontage(EWeaponType::E_SWORDSHIELD);
-	AdamAnim->SetChangingWeapon(true);
-	CurWeaponType = EWeaponType::E_SWORDSHIELD;
+	{
+		SetUsingShield(false);
+	}
+	else if(CurWeaponType == EWeaponType::E_BOW)
+	{
+		SetAimingArrow(false);
+	}
 }
 
-void AAdamCharacter::BowMode()
+void AAdamCharacter::SetSprinting(bool bNewSprinting)
 {
-	if (CurWeaponType == EWeaponType::E_BOW)
-		return;
-	AdamAnim->PlayChangeWeaponMontage(EWeaponType::E_BOW);
+	bIsSprinting = bNewSprinting;
+	if (GetLocalRole() < ROLE_Authority) // 클라이언트에서 실행
+	{
+		ServerSetSprinting(bNewSprinting);
+	}
+}
+void AAdamCharacter::SetUsingShield(bool bNewUsingShield)
+{
+	bIsUsingShield = bNewUsingShield;
+	if (GetLocalRole() < ROLE_Authority) // 클라이언트에서 실행
+	{
+		ServerSetUsingShield(bNewUsingShield);
+	}
+}
+
+void AAdamCharacter::SetAimingArrow(bool bNewAimingArrow)
+{
+	bIsAimingArrow = bNewAimingArrow;
+	if (GetLocalRole() < ROLE_Authority) // 클라이언트에서 실행
+	{
+		ServerSetAimingArrow(bNewAimingArrow);
+	}
+}
+
+//bool AAdamCharacter::SetCurrentWeaponMode_Validate(EWeaponType NewWeapon)
+//{
+//	return true;
+//}
+void AAdamCharacter::SetCurrentWeaponMode_Implementation(EWeaponType NewWeapon)
+{
+	////if (GetLocalRole() == ROLE_Authority) // 서버에서
+	////{
+	//	CurWeaponType = NewWeapon;		
+	////}
+	////else // 클라에서
+
+	CurWeaponType = NewWeapon;
+	AdamAnim->PlayChangeWeaponMontage(NewWeapon);
 	AdamAnim->SetChangingWeapon(true);
-	//UE_LOG(PalaceWorld, Warning, TEXT("bIsChangingWeapon = %d"), AdamAnim->GetbIsChangingWeapon());
-	CurWeaponType = EWeaponType::E_BOW;
+	/*if(GetLocalRole() < ROLE_Authority) 
+	{
+		int curWeapNum = 0;
+		if (CurWeaponType == EWeaponType::E_BOW)
+			curWeapNum = 2;
+		else curWeapNum = 1;
+	
+		if (IsLocallyControlled()) {
+			FString CurWeaponMessage = FString::Printf(TEXT("MyClient WeaponType(1:sword,2:Bow) = %d"), curWeapNum);
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, CurWeaponMessage);
+		}
+		else
+		{
+			FString CurWeaponMessage = FString::Printf(TEXT("Client2 WeaponType(1:sword,2:Bow) = %d"), curWeapNum);
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, CurWeaponMessage);
+		}
+		
+	}
+	if (GetLocalRole() == ROLE_Authority)
+	{
+		int curWeapNum = 0;
+		if (CurWeaponType == EWeaponType::E_BOW)
+			curWeapNum = 2;
+		else curWeapNum = 1;
+		FString CurWeaponMessage = FString::Printf(TEXT("Server WeaponType(1:sword,2:Bow) = %d"), curWeapNum);
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, CurWeaponMessage);
+		
+	}*/
+	
+	//Server-specific functionality
+	//if (GetLocalRole() == ROLE_Authority)
+	//{
+	//	int curWeapNum = 0;
+	//	if (CurWeaponType == EWeaponType::E_BOW)
+	//		curWeapNum = 2;
+	//	else curWeapNum = 1;
+	//	FString CurWeaponMessage = FString::Printf(TEXT("Server WeaponType(1:sword,2:Bow) = %d"), curWeapNum);
+	//	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, CurWeaponMessage);
+	//}
+	//else // 클라이언트 실행
+	//{
+	//	ServerSwitchWeaponMode(NewWeapon);
+	//	int curWeapNum = 0;
+	//	if (CurWeaponType == EWeaponType::E_BOW)
+	//		curWeapNum = 2;
+	//	else curWeapNum = 1;
+	//	FString CurWeaponMessage = FString::Printf(TEXT("Client WeaponType(1:sword,2:Bow) = %d"), curWeapNum);
+	//	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, CurWeaponMessage);
+	//	AdamAnim->PlayChangeWeaponMontage(NewWeapon);
+	//	AdamAnim->SetChangingWeapon(true);
+	//}
+}
+
+
+
+//void AAdamCharacter::Sprint()
+//{
+//		bIsSprinting = true;
+//		if (!HasAuthority())
+//		{
+//			ServerSetSprinting(bIsSprinting);
+//			if (!bIsAttacking && !(AdamAnim->GetbUsingShield()))
+//			{
+//				if (GetVelocity().Size() != 0.0f) {
+//					GetCharacterMovement()->MaxAcceleration = fSprintAcceleration;
+//					GetCharacterMovement()->MaxWalkSpeed = fWalkSpeed * 2;
+//					AdamAnim->SetSprintAnim(true);
+//					//UE_LOG(PalaceWorld, Warning, TEXT("sprinting maxwalkspeed=%f"), GetCharacterMovement()->MaxWalkSpeed);
+//					//UE_LOG(PalaceWorld, Warning, TEXT("getvelocity = %f"), GetVelocity().Size());
+//				}
+//			}
+//		}
+//	}
+//}
+
+bool AAdamCharacter::ServerSetSprinting_Validate(bool bNewSprinting)
+{
+	return true;
+}
+void AAdamCharacter::ServerSetSprinting_Implementation(bool bNewSprinting)
+{
+	SetSprinting(bNewSprinting);
+}
+
+bool AAdamCharacter::ServerSetUsingShield_Validate(bool bNewUsingShield)
+{
+	return true;
+}
+void AAdamCharacter::ServerSetUsingShield_Implementation(bool bNewUsingShield)
+{
+	SetUsingShield(bNewUsingShield);
+}
+
+bool AAdamCharacter::ServerSetAimingArrow_Validate(bool bNewAimingArrow)
+{
+	return true;
+}
+void AAdamCharacter::ServerSetAimingArrow_Implementation(bool bNewAimingArrow)
+{
+	SetAimingArrow(bNewAimingArrow);
+}
+
+void AAdamCharacter::OnRep_CurrentWeaponModeUpdate(EWeaponType NewWeapon)
+{
+	SetCurrentWeaponMode(NewWeapon);
+}
+bool AAdamCharacter::ServerSwitchWeaponMode_Validate(EWeaponType NewWeapon)
+{
+	return true;
+}
+void AAdamCharacter::ServerSwitchWeaponMode_Implementation(EWeaponType NewWeapon)
+{
+	SetCurrentWeaponMode(NewWeapon);
+}
+
+bool AAdamCharacter::IsSprinting() const
+{
+	if (!GetCharacterMovement())
+	{
+		return false;
+	}
+
+	return (bIsSprinting && !GetVelocity().IsZero());
+}
+
+bool AAdamCharacter::IsUsingShield() const
+{
+
+	return bIsUsingShield;
+}
+
+bool AAdamCharacter::IsAimingArrow() const
+{
+	return bIsAimingArrow;
+}
+
+float AAdamCharacter::GetSprintingSpeedModifier() const
+{
+	return fRunningSpeedModifier;
+}
+
+
+
+//void AAdamCharacter::StopSprinting()
+//{
+//	GetCharacterMovement()->MaxWalkSpeed = fWalkSpeed;
+//	AdamAnim->SetSprintAnim(false);
+//
+//	GetCharacterMovement()->MaxAcceleration = fAcceleration;
+//}
+
+
+
+//void AAdamCharacter::UseWeaponAbility()
+//{
+//	if (!bIsAttacking) {
+//		if (AdamAnim->GetbIsSprinting())
+//			SetSprinting(false);
+//		if (CurWeaponType == EWeaponType::E_SWORDSHIELD) // 방패막기
+//		{	
+//			AdamAnim->SetUsingShieldAnim(true);
+//		}
+//		else if (CurWeaponType == EWeaponType::E_BOW)
+//		{
+//			AdamAnim->SetAimingArrowAnim(true);
+//		}
+//	}
+//}
+//
+//void AAdamCharacter::StopWeaponAbility()
+//{
+//	if (CurWeaponType == EWeaponType::E_SWORDSHIELD) // 방패막기
+//	{
+//		AdamAnim->SetUsingShieldAnim(false);
+//	}
+//	else if (CurWeaponType == EWeaponType::E_BOW)
+//	{
+//		AdamAnim->SetAimingArrowAnim(false);
+//	}
+//}
+
+void AAdamCharacter::OnSwordAndShieldMode()
+{
+	AAdamPlayerController* MyPC = Cast<AAdamPlayerController>(Controller);
+	if (MyPC)
+	{
+		if (CurWeaponType == EWeaponType::E_SWORDSHIELD)
+			return;
+		ServerSwitchWeaponMode(EWeaponType::E_SWORDSHIELD);
+		//SetCurrentWeaponMode(EWeaponType::E_SWORDSHIELD);
+		
+		//CurWeaponType = EWeaponType::E_SWORDSHIELD;
+	}	
+}
+
+void AAdamCharacter::OnBowMode()
+{
+	AAdamPlayerController* MyPC = Cast<AAdamPlayerController>(Controller);
+	if (MyPC)
+	{
+		if (CurWeaponType == EWeaponType::E_BOW)
+			return;
+		ServerSwitchWeaponMode(EWeaponType::E_BOW);
+		//SetCurrentWeaponMode(EWeaponType::E_BOW);
+
+
+
+		/*AdamAnim->PlayChangeWeaponMontage(EWeaponType::E_BOW);
+		AdamAnim->SetChangingWeapon(true);
+		CurWeaponType = EWeaponType::E_BOW;*/
+		//UE_LOG(PalaceWorld, Warning, TEXT("bIsChangingWeapon = %d"), AdamAnim->GetbIsChangingWeapon());
+	}
 }
 
 
@@ -539,4 +803,22 @@ void AAdamCharacter::BowAttackShootArrowCheck()
 	FVector LaunchDir = GetCapsuleComponent()->GetForwardVector();
 	Bow_Arrow->OnActivated(LaunchDir);
 	UE_LOG(PalaceWorld, Warning, TEXT("%s is On Activated"), *Bow_Arrow->GetName());
+}
+
+
+
+
+void AAdamCharacter::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// everyone except local owner: flag change is locally instigated
+	DOREPLIFETIME_CONDITION(AAdamCharacter, bIsSprinting, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(AAdamCharacter, bIsUsingShield, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(AAdamCharacter, bIsAimingArrow, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(AAdamCharacter, CurWeaponType, COND_SkipOwner);
+
+
+	// 모두에게
+	//DOREPLIFETIME(AAdamCharacter, CurWeaponType);
 }

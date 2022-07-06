@@ -15,6 +15,8 @@ class PROJECTRPG_API APalaceGameMode : public AGameModeBase
 	GENERATED_BODY()
 public:
 	APalaceGameMode();
+public:
+	virtual void PostLogin(APlayerController* NewPlayer) override;
 //	class AAdamObjectPool* GetObjectPool();
 //private:
 //	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(AllowPrivateAccess=true))

@@ -4,6 +4,8 @@
 #include "AdamAnimInstance.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PawnMovementComponent.h"
+#include "AdamCharacter.h"
+#include "Net/UnrealNetwork.h"
 
 
 UAdamAnimInstance::UAdamAnimInstance()
@@ -12,8 +14,8 @@ UAdamAnimInstance::UAdamAnimInstance()
 	bIsFalling = false;
 	bIsSprinting = false;
 	bIsDead = false;
-	bUsingShield = false;
-	bAimingArrow = false;
+	bIsUsingShield = false;
+	bIsAimingArrow = false;
 	bIsChangingWeapon = false;
 	// 랜덤 죽음 애니메이션 인덱스 세팅
 	RandDeathAnimIdx = FMath::RandRange(0, 1);
@@ -48,19 +50,18 @@ void UAdamAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
 
-	auto Pawn = TryGetPawnOwner();
-	if (!::IsValid(Pawn))
+	auto Player = Cast<AAdamCharacter>(TryGetPawnOwner());
+	if (!::IsValid(Player))
 		return;
 
 	if (!bIsDead)
 	{
-		CurrentPawnSpeed = Pawn->GetVelocity().Size();
-		//CurrentPawnDir = CalculateDirection(Pawn->GetVelocity(), FRotator(0.0f, Pawn->GetControlRotation().Yaw, 0.0f)); // pawn의 진행방향 구하는 코드
-		auto Character = Cast<ACharacter>(Pawn);
-		if (Character)
-		{
-			bIsFalling = Character->GetMovementComponent()->IsFalling(); // 캐릭터 컴포넌트에서만 사용 가능
-		}
+		CurrentPawnSpeed = Player->GetVelocity().Size();
+		//CurrentPawnDir = CalculateDirection(Pawn->GetVelocity(), FRotator(0.0f, Pawn->GetControlRotation().Yaw, 0.0f)); // pawn의 진행방향 구하는 코드	
+		bIsFalling = Player->GetMovementComponent()->IsFalling(); // 캐릭터 컴포넌트에서만 사용 가능
+		bIsSprinting = Player->IsSprinting();
+		bIsUsingShield = Player->IsUsingShield();
+		bIsAimingArrow = Player->IsAimingArrow();
 	}
 
 }
@@ -104,6 +105,23 @@ void UAdamAnimInstance::JumpToAttackMontageSection(int32 NewSection)
 	}
 }
 
+void UAdamAnimInstance::SetSprintAnim(bool bPressedShift)
+{
+	 bIsSprinting = bPressedShift;
+	 //UE_LOG(PalaceWorld, Error, TEXT("AnimInstance IsSetSprinting = %d"),bIsSprinting); 
+}
+
+//bool UAdamAnimInstance::SetSprintAnim_Validate(bool bPressedShift)
+//{
+//	return true;
+//}
+//
+//void UAdamAnimInstance::SetSprintAnim_Implementation(bool bPressedShift)
+//{
+//	bIsSprinting = bPressedShift;
+//	UE_LOG(PalaceWorld, Error, TEXT("AnimInstance IsSetSprinting = %d"), bIsSprinting);
+//}
+
 void UAdamAnimInstance::AnimNotify_TookOutSword()
 {
 	OnSwordTookOutCheck.Broadcast();
@@ -142,3 +160,15 @@ FName UAdamAnimInstance::GetAttackMontageSectionName(int32 Section)
 		return NAME_None;
 	
 }
+
+//void UAdamAnimInstance::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const
+//{
+//	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+//
+//	DOREPLIFETIME_CONDITION(UAdamAnimInstance, bIsSprinting, COND_SkipOwner);
+//	DOREPLIFETIME_CONDITION(UAdamAnimInstance, bIsDead, COND_SkipOwner);
+//	DOREPLIFETIME_CONDITION(UAdamAnimInstance, RandDeathAnimIdx, COND_SkipOwner);
+//	DOREPLIFETIME_CONDITION(UAdamAnimInstance, bIsChangingWeapon, COND_SkipOwner);
+//	DOREPLIFETIME_CONDITION(UAdamAnimInstance, bUsingShield, COND_SkipOwner);
+//	DOREPLIFETIME_CONDITION(UAdamAnimInstance, bAimingArrow, COND_SkipOwner);
+//}

@@ -19,3 +19,9 @@ APalaceGameMode::APalaceGameMode()
 //		ObjectPool = Cast<AAdamObjectPool>(GetWorld()->SpawnActor(AAdamObjectPool::StaticClass()));
 //	return ObjectPool;
 //}
+
+void APalaceGameMode::PostLogin(APlayerController* NewPlayer)
+{
+	Super::PostLogin(NewPlayer);
+
+}

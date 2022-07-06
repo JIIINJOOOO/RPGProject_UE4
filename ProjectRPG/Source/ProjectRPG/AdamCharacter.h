@@ -13,7 +13,7 @@
 UCLASS()
 class PROJECTRPG_API AAdamCharacter : public ACharacter
 {
-	GENERATED_BODY()
+	GENERATED_UCLASS_BODY()
 
 public:
 	// Sets default values for this character's properties
@@ -74,23 +74,40 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = UI)
 	class UWidgetComponent* HPBarWidget;
 
-
-	// 상하좌우 이동
+	//////////////////////////////////////////////
+	// Input Handlers
+	// 상하좌우 이동S
 	void MoveFB(float NewAxisValue);
 	void MoveLR(float NewAxisValue);
 	void Attack(); // 기본공격. 나중에 무기 따라 다르게
 	// shift키-달리기
-	void Sprint(); 
-	void StopSprinting();
-	void UseWeaponAbility(); // 무기 특수기능. 무기 따라 다르게
-	void StopWeaponAbility();
+	/** 플레이어가 sprint action을 눌렀다 */
+	void OnStartSprinting();	
+	/** 플레이어가 sprint action 키 뗐다 */
+	void OnStopSprinting(); 
+	/** 플레이어가 무기별 능력 키 뗐다 */
+	void OnUseWeaponAbility(); // 무기 특수기능. 무기 따라 다르게
+	/** 플레이어가 무기별 능력 키 뗐다 */
+	void OnStopWeaponAbility();
+	/*void UseWeaponAbility(); 
+	void StopWeaponAbility();*/
 	// 숫자키 : 무기 전환
-	void SwordAndShieldMode();
-	void BowMode();
+	void OnSwordAndShieldMode();
+	void OnBowMode();
 
 	// getter
 	//FORCEINLINE bool GetIsDead() { return bIsDead; };
-
+private:
+	//////////////////////////////////////////////
+	// server replication functions
+	UFUNCTION(reliable, server, WithValidation)
+	void ServerSetSprinting(bool bNewSprinting);
+	UFUNCTION(reliable, server, WithValidation)
+	void ServerSetUsingShield(bool bNewUsingShield);
+	UFUNCTION(reliable, server, WithValidation)
+	void ServerSetAimingArrow(bool bNewAimingArrow);
+	UFUNCTION(reliable, server, WithValidation)
+	void ServerSwitchWeaponMode(EWeaponType NewWeapon);
 private:
 	//void LoadStaticMeshInConstructor(UStaticMeshComponent* SMComponent,FName SocketName, FName ComponentName, UStaticMesh* mesh);
 
@@ -111,9 +128,21 @@ private:
 	void BowAttackPickArrowCheck();
 	void BowAttackShootArrowCheck();
 	
+	// [server+ local] sprint상태를 바꾼다
+	void SetSprinting(bool bNewSprinting);
+	// [server+ local] shield 사용 상태를 바꾼다
+	void SetUsingShield(bool bNewUsingShield);
+	// [server+ local] aiming arrow 사용 상태를 바꾼다
+	void SetAimingArrow(bool bNewAimingArrow);
+	/** CurWeaponType 업데이트 */
+	UFUNCTION(NetMulticast,reliable)
+	void SetCurrentWeaponMode(EWeaponType NewWeapon);
 
+	/** 현재 무기 리플리케이션 handler */
+	UFUNCTION()
+	void OnRep_CurrentWeaponModeUpdate(EWeaponType NewWeapon);
 private:
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true)) // 현재 무기 타입
+	UPROPERTY(Replicated/*ReplicatedUsing = OnRep_CurrentWeaponModeUpdate*/,VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true)) // 현재 무기 타입
 	EWeaponType CurWeaponType;
 
 	// 무기 공통 공격중인지 변수
@@ -142,7 +171,25 @@ private:
 	/*UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
 	bool bIsDead;*/
 
-	
+	// 네트워크 리플리케이션 위한 변수들
+	/** 현재 Sprint 중 인지 아닌지 상태*/
+	UPROPERTY(Transient, Replicated)
+	uint8 bIsSprinting : 1;
+	/** 현재 무기별 능력 사용중 인지 아닌지 상태*/
+	UPROPERTY(Transient, Replicated)
+	uint8 bIsUsingShield : 1;
+	UPROPERTY(Transient, Replicated)
+	uint8 bIsAimingArrow : 1;
+public:
+	//////////////////////////////////////////////
+	// getter
+	/**sprint 중인지 상태 get*/
+	UFUNCTION(BlueprintCallable, Category = Pawn)
+	bool IsSprinting() const;
+	bool IsUsingShield() const;
+	bool IsAimingArrow() const;
+
+	float GetSprintingSpeedModifier() const;
 
 	
 };
