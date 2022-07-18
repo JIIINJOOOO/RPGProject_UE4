@@ -4,12 +4,15 @@
 #include "PalaceGameMode.h"
 #include "AdamCharacter.h"
 #include "AdamPlayerController.h"
+#include "PalacePlayerState.h"
 //#include "AdamObjectPool.h"
 
 APalaceGameMode::APalaceGameMode() 
 {
 	DefaultPawnClass = AAdamCharacter::StaticClass();
 	PlayerControllerClass = AAdamPlayerController::StaticClass();
+	PlayerStateClass = APalacePlayerState::StaticClass();
+
 }
 
 
@@ -23,5 +26,10 @@ APalaceGameMode::APalaceGameMode()
 void APalaceGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
+	auto PalacePlayerState = Cast<APalacePlayerState>(NewPlayer->PlayerState);
+	if (nullptr != PalacePlayerState)
+	{
+		PalacePlayerState->InitPlayerData();
+	}
 
 }

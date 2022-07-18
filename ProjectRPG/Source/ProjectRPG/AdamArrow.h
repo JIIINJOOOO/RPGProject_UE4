@@ -33,8 +33,11 @@ public:
 
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, FVector NormalImpulse, const FHitResult& Hit);
+	UFUNCTION(server,reliable)
+	void HitActorApplyDamage(const FHitResult& HitResult);
 
-	FORCEINLINE void setDamageByPlayerLevel(float dmg) { DmgByPlayerLv = dmg; }
+	UFUNCTION(NetMulticast,reliable)
+	void setArrowDataByPlayer(float dmg, AController* EventInstigator);
 	FORCEINLINE float getDamageByPlayerLevel() { return DmgByPlayerLv; }
 
 public:	
@@ -56,5 +59,9 @@ private:
 	FTimerHandle ArrowTimerHandle; // 충돌 후 오브젝트 풀에 반환 위한 타이머 핸들
 	float returnInterval; // 객체가 충돌하고 오브젝트 풀에 반환될때 까지 시간
 
-	static float DmgByPlayerLv;
+	// 화살을 쏜 플레이어의 컨트롤러
+	AController* ShooterController;
+
+	UPROPERTY(replicated)
+	/*static */float DmgByPlayerLv;
 };

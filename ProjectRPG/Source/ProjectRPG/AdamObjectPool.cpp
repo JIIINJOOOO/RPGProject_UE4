@@ -40,6 +40,8 @@ void AAdamObjectPool::Expand()
 		AAdamArrow* PoolableActor = GetWorld()->SpawnActor<AAdamArrow>(AAdamArrow::StaticClass(), FVector().ZeroVector, FRotator().ZeroRotator);
 		PoolableActor->SetActive(false);
 		PoolableActor->SetObjectPool(this);
+		PoolableActor->SetReplicates(true);
+		PoolableActor->SetReplicateMovement(true);
 		Pool.Push(PoolableActor);
 	}
 	PoolSize += ExpandSize;

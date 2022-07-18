@@ -101,6 +101,7 @@ void UAdamAnimInstance::JumpToAttackMontageSection(int32 NewSection)
 		if (Montage_IsPlaying(AttackMontage)) // Ä® ÄÞº¸ °ø°Ý ¸ùÅ¸ÁÖ°¡ Àç»ýÁßÀÌ¶ó¸é
 		{
 			Montage_JumpToSection(GetAttackMontageSectionName(NewSection), AttackMontage);
+			//Montage_SetNextSection(GetAttackMontageSectionName(NewSection-1), GetAttackMontageSectionName(NewSection), AttackMontage);
 		}
 	}
 }
@@ -161,14 +162,3 @@ FName UAdamAnimInstance::GetAttackMontageSectionName(int32 Section)
 	
 }
 
-//void UAdamAnimInstance::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const
-//{
-//	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-//
-//	DOREPLIFETIME_CONDITION(UAdamAnimInstance, bIsSprinting, COND_SkipOwner);
-//	DOREPLIFETIME_CONDITION(UAdamAnimInstance, bIsDead, COND_SkipOwner);
-//	DOREPLIFETIME_CONDITION(UAdamAnimInstance, RandDeathAnimIdx, COND_SkipOwner);
-//	DOREPLIFETIME_CONDITION(UAdamAnimInstance, bIsChangingWeapon, COND_SkipOwner);
-//	DOREPLIFETIME_CONDITION(UAdamAnimInstance, bUsingShield, COND_SkipOwner);
-//	DOREPLIFETIME_CONDITION(UAdamAnimInstance, bAimingArrow, COND_SkipOwner);
-//}

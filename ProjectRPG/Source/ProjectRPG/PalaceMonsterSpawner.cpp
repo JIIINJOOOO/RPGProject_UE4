@@ -14,7 +14,7 @@ float APalaceMonsterSpawner::SpawnRangeRadius = 800.0f;
 APalaceMonsterSpawner::APalaceMonsterSpawner()
 {
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
-	SpawnInterval = 10.0f;
+	SpawnInterval = 20.0f;
 	PrimaryActorTick.bCanEverTick = true;
 	SpawnerComponent = CreateDefaultSubobject<USceneComponent>(TEXT("SPAWNER"));
 	RootComponent = SpawnerComponent;

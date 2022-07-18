@@ -4,6 +4,7 @@
 #include "AdamCharacterStatComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "PalaceGameInstance.h"
+#include "Net/UnrealNetwork.h"
 
 // Sets default values
 UAdamCharacterStatComponent::UAdamCharacterStatComponent()
@@ -13,6 +14,7 @@ UAdamCharacterStatComponent::UAdamCharacterStatComponent()
 	bWantsInitializeComponent = true;
 
 	Level = 1;
+
 }
 
 // Called when the game starts or when spawned
@@ -48,7 +50,7 @@ void UAdamCharacterStatComponent::SetNewLevel(int32 NewLevel)
 	}
 }
 
-void UAdamCharacterStatComponent::SetDamage(float NewDamage)
+void UAdamCharacterStatComponent::SetDamage_Implementation(float NewDamage)
 {
 	if (nullptr != CurrentStatData)
 	{
@@ -60,7 +62,7 @@ void UAdamCharacterStatComponent::SetDamage(float NewDamage)
 	}
 }
 
-void UAdamCharacterStatComponent::SetHP(float NewHP)
+void UAdamCharacterStatComponent::SetHP_Implementation(float NewHP)
 {
 	CurrentHP = NewHP;
 	OnHPChanged.Broadcast();
@@ -87,3 +89,13 @@ float UAdamCharacterStatComponent::GetHPRatio()
 }
 
 
+
+void UAdamCharacterStatComponent::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// 모두에게
+	DOREPLIFETIME(UAdamCharacterStatComponent, CurrentHP);
+
+
+}

@@ -31,15 +31,20 @@ public:
 	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
 	// Ä³¸¯ÅÍ ½ºÅÈ
-	UPROPERTY(VisibleAnywhere, Category = Stat)
+	UPROPERTY(Replicated,VisibleAnywhere, Category = Stat)
 	class UAdamCharacterStatComponent* CharacterStat;
 
 	UPROPERTY(VisibleAnywhere, Category = UI)
 	class UWidgetComponent* HPBarWidget;
 
-	void Attack();
 	FOnAttackEndDelegate OnAttackEnd;
+	void Attack();
 	void AttackCheck();
+	// °ø°Ý Ãæµ¹Ã³¸®: Ä¸½¶ µð¹ö±× µå·ÎÀ×
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
+	float AttackRange;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
+	float AttackRadius;
 	void Die();
 	void MakeRagdollWithImpulse();
 private:

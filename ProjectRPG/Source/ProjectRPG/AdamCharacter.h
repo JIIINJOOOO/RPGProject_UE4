@@ -34,7 +34,7 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	
 	// 캐릭터 스탯
-	UPROPERTY(VisibleAnywhere, Category = Stat)
+	UPROPERTY(Replicated,VisibleAnywhere, Category = Stat)
 	class UAdamCharacterStatComponent* CharacterStat;
 
 	// 등 뒤 무기 스태틱메쉬들
@@ -79,7 +79,8 @@ public:
 	// 상하좌우 이동S
 	void MoveFB(float NewAxisValue);
 	void MoveLR(float NewAxisValue);
-	void Attack(); // 기본공격. 나중에 무기 따라 다르게
+
+	void OnAttack(); // 기본공격. 나중에 무기 따라 다르게
 	// shift키-달리기
 	/** 플레이어가 sprint action을 눌렀다 */
 	void OnStartSprinting();	
@@ -108,11 +109,15 @@ private:
 	void ServerSetAimingArrow(bool bNewAimingArrow);
 	UFUNCTION(reliable, server, WithValidation)
 	void ServerSwitchWeaponMode(EWeaponType NewWeapon);
+	UFUNCTION(reliable, server, WithValidation)
+	void ServerDoBasicAttack();
 private:
 	//void LoadStaticMeshInConstructor(UStaticMeshComponent* SMComponent,FName SocketName, FName ComponentName, UStaticMesh* mesh);
 
 	UFUNCTION()
 	void OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+	UFUNCTION()
+	void OnAttackNextAttackCheck();
 
 	// 칼로 무기 전환 
 	void SwordTookOutCheck();
@@ -122,12 +127,20 @@ private:
 	void AttackStartComboState();
 	void AttackEndComboState();
 	// 칼 공격 탐지
+	UFUNCTION(server,reliable)
+	void HitActorApplyDamage(const FHitResult& HitResult);
 	void AttackCheck();
 	
 	// 활 기본공격 델리게이트
 	void BowAttackPickArrowCheck();
 	void BowAttackShootArrowCheck();
-	
+	// 활 공격 화살 데이터(데미지,컨트롤러) set
+	UFUNCTION(server, reliable)
+	void SetArrowDamageData();
+
+	// HPIsZero일때 Delegate
+	void HPIsZero();
+
 	// [server+ local] sprint상태를 바꾼다
 	void SetSprinting(bool bNewSprinting);
 	// [server+ local] shield 사용 상태를 바꾼다
@@ -135,18 +148,26 @@ private:
 	// [server+ local] aiming arrow 사용 상태를 바꾼다
 	void SetAimingArrow(bool bNewAimingArrow);
 	/** CurWeaponType 업데이트 */
-	UFUNCTION(NetMulticast,reliable)
+	UFUNCTION(NetMulticast,reliable, WithValidation)
 	void SetCurrentWeaponMode(EWeaponType NewWeapon);
+	// 기본 공격 로직 함수
+	UFUNCTION(NetMulticast, reliable, WithValidation)
+	void DoBasicAttack();
+	/*UFUNCTION()
+	void OnRep_CurrentComboMtgUpdate(int32 NewCurrentCombo);*/
 
 	/** 현재 무기 리플리케이션 handler */
-	UFUNCTION()
-	void OnRep_CurrentWeaponModeUpdate(EWeaponType NewWeapon);
+	/*UFUNCTION()
+	void OnRep_CurrentWeaponModeUpdate(EWeaponType NewWeapon);*/
+
+	UFUNCTION(NetMulticast, reliable, WithValidation)
+	void SetAttackMtgByCurrentCombo(int32 NewCurrentCombo);
 private:
 	UPROPERTY(Replicated/*ReplicatedUsing = OnRep_CurrentWeaponModeUpdate*/,VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true)) // 현재 무기 타입
 	EWeaponType CurWeaponType;
 
 	// 무기 공통 공격중인지 변수
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
+	UPROPERTY(Replicated,VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
 	bool bIsAttacking;
 
 	// 칼 공격 콤보 변수들
@@ -154,7 +175,7 @@ private:
 	bool bCanNextCombo;
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
 	bool bIsComboInputOn;
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
+	UPROPERTY(/*Replicated,*//*ReplicatedUsing = OnRep_CurrentComboMtgUpdate, */VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
 	int32 CurrentCombo;
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
 	int32 MaxCombo;
@@ -170,6 +191,9 @@ private:
 	
 	/*UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = Attack, Meta = (AllowPrivateAccess = true))
 	bool bIsDead;*/
+	/** Identifies if pawn is in its dying state */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = Health, Meta = (AllowPrivateAccess = true))
+	uint32 bIsDying : 1;
 
 	// 네트워크 리플리케이션 위한 변수들
 	/** 현재 Sprint 중 인지 아닌지 상태*/

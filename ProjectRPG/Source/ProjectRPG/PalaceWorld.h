@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "AdamCharacterMovementComponent.h"
+//#include "AdamCharacterMovementComponent.h"
 DECLARE_LOG_CATEGORY_EXTERN(PalaceWorld, Log, All);
 
 UENUM(BlueprintType)

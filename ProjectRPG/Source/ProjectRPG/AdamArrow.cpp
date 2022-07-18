@@ -6,8 +6,9 @@
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "AdamObjectPool.h"
 #include "Kismet/GameplayStatics.h"
+#include "Net/UnrealNetwork.h"
 
-float AAdamArrow::DmgByPlayerLv = 0.0f;
+//float AAdamArrow::DmgByPlayerLv = 0.0f;
 
 // Sets default values
 AAdamArrow::AAdamArrow()
@@ -43,6 +44,10 @@ AAdamArrow::AAdamArrow()
 	Movement->bAutoActivate = false;
 
 	returnInterval = 3.0f;
+
+	// 리플리케이션 풀 생성할때 해줌
+	/*SetReplicates(true);
+	SetReplicateMovement(true);*/
 }
 
 // Called when the game starts or when spawned
@@ -95,20 +100,52 @@ void AAdamArrow::OnActivated(const FVector& ShootDir)
 	Movement->Activate();
 }
 
+void AAdamArrow::HitActorApplyDamage_Implementation(const FHitResult& HitResult)
+{
+	FDamageEvent DamageEvent;
+	if (HasAuthority())
+		UE_LOG(PalaceWorld, Warning, TEXT("Arrow Hit Actor Name : %s, Damage : %f"), *HitResult.Actor->GetName(), DmgByPlayerLv);
+	if(nullptr == ShooterController)
+		UE_LOG(PalaceWorld, Error, TEXT("Arrow ShooterController is NULL"));
 
+	if (HitResult.Actor->ActorHasTag(FName(TEXT("Monster"))))
+		float fDamage = HitResult.Actor->TakeDamage(DmgByPlayerLv/*나중에 캐릭터 스탯에서 받아오는 처리 필요*/, DamageEvent, ShooterController/* GetWorld()->GetFirstPlayerController()*/, this);
+
+}
 
 void AAdamArrow::OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, FVector NormalImpulse, const FHitResult& Hit)
 {
-	UE_LOG(PalaceWorld, Warning, TEXT("Hit Actor Name : %s"), *Hit.Actor->GetName());
+
+	//UE_LOG(PalaceWorld, Warning, TEXT("Hit Actor Name : %s"), *Hit.Actor->GetName());
+	//UE_LOG(PalaceWorld, Warning, TEXT("arrow bIsReplicated : %d"), GetIsReplicated());
 
 	SetActorEnableCollision(false);
 	GetWorldTimerManager().SetTimer(ArrowTimerHandle, this, &AAdamArrow::ReturnSelf, 1.0f, false, returnInterval);
 	if (Hit.Actor.IsValid())
 	{
-		FDamageEvent DamageEvent;
-		// 여기서 OtherActor는 ProjectileArrow와 충돌한 객체, 즉 몬스터 객체이다
-		float fDamage = OtherActor->TakeDamage(DmgByPlayerLv/*나중에 캐릭터 스탯에서 받아오는 처리 필요*/, DamageEvent, GetWorld()->GetFirstPlayerController(), this);
+		
+		//FDamageEvent DamageEvent;
+		//// 여기서 OtherActor는 ProjectileArrow와 충돌한 객체, 즉 몬스터 객체이다
+		//float fDamage = OtherActor->TakeDamage(DmgByPlayerLv/*나중에 캐릭터 스탯에서 받아오는 처리 필요*/, DamageEvent, GetWorld()->GetFirstPlayerController(), this);
+		HitActorApplyDamage(Hit);
 	}
 }
 
+void AAdamArrow::setArrowDataByPlayer_Implementation(float dmg, AController* EventInstigator)
+{
+	DmgByPlayerLv = dmg; 
+	ShooterController = EventInstigator; 
+}
 
+void AAdamArrow::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// everyone except local owner: flag change is locally instigated
+	DOREPLIFETIME_CONDITION(AAdamArrow, DmgByPlayerLv, COND_SkipOwner);
+
+	// 모두에게
+	//DOREPLIFETIME(AAdamArrow, DmgByPlayerLv);
+
+
+}

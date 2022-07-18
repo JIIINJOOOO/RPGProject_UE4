@@ -10,8 +10,9 @@
 #include "AdamWeaponBow.h"
 #include "AdamArrow.h"
 #include "AdamObjectPool.h"
+#include "AdamCharacterMovementComponent.h"
 #include "PalaceGameInstance.h"
-#include "DrawDebugHelpers.h"
+//#include "DrawDebugHelpers.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -19,6 +20,8 @@
 #include "Components/WidgetComponent.h"
 #include "AdamCharacterWidget.h"
 #include "Net/UnrealNetwork.h"
+#include "PalacePlayerState.h"
+
 
 
 // 캐릭터 무브먼트 관련 기본값들
@@ -172,7 +175,8 @@ AAdamCharacter::AAdamCharacter(const FObjectInitializer& ObjectInitializer)
 	Shield->SetVisibility(false);
 
 	
-	//네트워크 리플리케이션 위한 변수
+	bIsDying = false;
+	//네트워크 리플리케이션 
 	bIsSprinting = false;
 	
 }
@@ -222,8 +226,13 @@ void AAdamCharacter::BeginPlay()
 		{
 			CharacterWidget->BindCharacterStat(CharacterStat);
 		}
-
-		CharacterStat->SetNewLevel(3);
+		// 플레이어 스테이트 코드 추가 7/15 나중에 책보고 게임스테이트도 추가해보기
+		auto AdamPlayerState = Cast<APalacePlayerState>(GetPlayerState());
+		if (nullptr != AdamPlayerState)
+		{
+			CharacterStat->SetNewLevel(AdamPlayerState->GetCharacterLevel());
+		}
+		//CharacterStat->SetNewLevel(3);
 
 		// 네트워크 리플리케이트 관련
 		if (HasAuthority())
@@ -231,14 +240,19 @@ void AAdamCharacter::BeginPlay()
 			SetReplicates(true);
 			SetReplicateMovement(true);
 			GetCharacterMovement()->SetIsReplicated(true);
+			CharacterStat->SetIsReplicated(true);
 		}
+
+		Tags.Add(FName("Player"));
+		if(IsLocallyControlled())
+			UE_LOG(PalaceWorld, Error, TEXT("Controller Name: %s"), *(GetController()->GetPawn()->GetName()));
 }
 
 // Called every frame
 void AAdamCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	
+
 }
 
 void AAdamCharacter::PostInitializeComponents()
@@ -251,25 +265,33 @@ void AAdamCharacter::PostInitializeComponents()
 		return;
 	}
 	AdamAnim->OnMontageEnded.AddDynamic(this, &AAdamCharacter::OnAttackMontageEnded);
-	AdamAnim->OnNextAttackCheck.AddLambda([this]()->void {
+	AdamAnim->OnNextAttackCheck.AddUObject(this, &AAdamCharacter::OnAttackNextAttackCheck);
+	/*AdamAnim->OnNextAttackCheck.AddLambda([this]()->void {
+		if (HasAuthority())
+		{
+			FString CurWeaponMessage = FString::Printf(TEXT("server Animnotify OnNextAttackCheck called"));
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, CurWeaponMessage);
+		}
+		else
+		{
+			FString CurWeaponMessage = FString::Printf(TEXT("Client Animnotify OnNextAttackCheck called"));
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, CurWeaponMessage);
+		}
 		bCanNextCombo = false;
 
 		if (bIsComboInputOn)
 		{
 			AttackStartComboState();
 			AdamAnim->JumpToAttackMontageSection(CurrentCombo);
-
+			
 		}
-	});
+	});*/
 
 	// 캐릭터 hp-데미지 처리를 캐릭터 스탯 액터 컴포넌트에서 하도록 바인딩
-	CharacterStat->OnHPIsZero.AddLambda([this]()-> void {
-		UE_LOG(PalaceWorld, Warning, TEXT("OnHPIsZero"));
-		//bIsDead = true;
-		GetController()->DisableInput(Cast<AAdamPlayerController>(GetController()));
-		AdamAnim->SetDeadAnim();
-		SetActorEnableCollision(false);
-		});
+	/*CharacterStat->OnHPIsZero.AddLambda([this]()-> void {
+		
+		});*/
+	CharacterStat->OnHPIsZero.AddUObject(this, &AAdamCharacter::HPIsZero);
 	
 	
 
@@ -292,9 +314,27 @@ void AAdamCharacter::PossessedBy(AController* NewController)
 
 float AAdamCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) //액터의 TakeDamage 오버라이드해 액터가 받은 데미지를 처리하는 로직
 {
+
 	float FinalDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 	//UE_LOG(PalaceWorld, Warning, TEXT("Actor: %s / Took Dmg: %f"), *GetName(), FinalDamage);
-	
+	if (HasAuthority())
+	{
+		FString CurWeaponMessage = FString::Printf(TEXT("server takedamage called / TookDmg:%f, CurrentHP:%f"), FinalDamage, CharacterStat->GetHPRatio());
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, CurWeaponMessage);
+	}
+	else {
+		if (IsLocallyControlled())
+		{
+			FString CurWeaponMessage = FString::Printf(TEXT("LocalPlayer takedamage called / TookDmg:%f, CurrentHP:%f"), FinalDamage, CharacterStat->GetHPRatio());
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, CurWeaponMessage);
+		}
+		else
+		{
+			FString CurWeaponMessage = FString::Printf(TEXT("player on Client2 takedamage called / TookDmg:%f, CurrentHP:%f"), FinalDamage, CharacterStat->GetHPRatio());
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, CurWeaponMessage);
+		}
+	}
+
 	CharacterStat->SetDamage(FinalDamage);
 	return FinalDamage;
 }
@@ -317,7 +357,7 @@ void AAdamCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	PlayerInputComponent->BindAction(TEXT("Sprint"), IE_Pressed, this, &AAdamCharacter::OnStartSprinting);
 	PlayerInputComponent->BindAction(TEXT("Sprint"), IE_Released, this, &AAdamCharacter::OnStopSprinting);
 
-	PlayerInputComponent->BindAction(TEXT("Attack"), IE_Pressed, this, &AAdamCharacter::Attack);
+	PlayerInputComponent->BindAction(TEXT("Attack"), IE_Pressed, this, &AAdamCharacter::OnAttack);
 
 	PlayerInputComponent->BindAction(TEXT("WeaponAbility"), IE_Pressed, this, &AAdamCharacter::OnUseWeaponAbility);
 	PlayerInputComponent->BindAction(TEXT("WeaponAbility"), IE_Released, this, &AAdamCharacter::OnStopWeaponAbility);
@@ -341,43 +381,13 @@ void AAdamCharacter::MoveLR(float NewAxisValue)
 		AddMovementInput(FRotationMatrix(FRotator(0.0f, GetControlRotation().Yaw, 0.0f)).GetUnitAxis(EAxis::Y), NewAxisValue);
 }
 
-void AAdamCharacter::Attack()
+void AAdamCharacter::OnAttack/*_Implementation*/()
 {
-	if (AdamAnim->GetbIsSprinting())
-		SetSprinting(false);
-	switch (CurWeaponType) {
-	case EWeaponType::E_SWORDSHIELD :
-		if (bIsAttacking)
-		{
-			if (FMath::IsWithinInclusive<int32>(CurrentCombo, 1, MaxCombo))
-			{
-				if (bCanNextCombo)
-					bIsComboInputOn = true;
-			}
-		}
-		else
-		{
-			if (CurrentCombo == 0) {
-				AttackStartComboState();
-				AdamAnim->PlayAttackMontage(CurWeaponType);
-				AdamAnim->JumpToAttackMontageSection(CurrentCombo);
-				bIsAttacking = true;
-			}
-		}
-		break;
-	case EWeaponType::E_BOW: // 무기=활 일때
-		if (!bIsAttacking) 
-		{
-			bIsAttacking = true;
-			Bow_Arrow = ArrowPool->GetPooledObject();
-			if (0.0f == Bow_Arrow->getDamageByPlayerLevel())
-				Bow_Arrow->setDamageByPlayerLevel(CharacterStat->GetAttack());
-			UE_LOG(PalaceWorld, Warning, TEXT("bIsAttacking is %d"), bIsAttacking);
-			AdamAnim->PlayAttackMontage(CurWeaponType);
-		}
-		break;
+	AAdamPlayerController* MyPC = Cast<AAdamPlayerController>(Controller);
+	if (MyPC)
+	{
+		ServerDoBasicAttack();
 	}
-	
 }
 
 void AAdamCharacter::OnStartSprinting()
@@ -446,11 +456,99 @@ void AAdamCharacter::SetAimingArrow(bool bNewAimingArrow)
 		ServerSetAimingArrow(bNewAimingArrow);
 	}
 }
+bool AAdamCharacter::DoBasicAttack_Validate()
+{
+	return true;
+}
+void AAdamCharacter::DoBasicAttack_Implementation()
+{
+	/*if (HasAuthority())
+	{
+		FString CurWeaponMessage = FString::Printf(TEXT("Server currentCombo = %d"), CurrentCombo);
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, CurWeaponMessage);
+	}
+	else
+	{
+		if (IsLocallyControlled())
+		{
+			FString CurWeaponMessage = FString::Printf(TEXT("local Client currentCombo = %d"), CurrentCombo);
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, CurWeaponMessage);
+		}
+		else
+		{
+			FString CurWeaponMessage = FString::Printf(TEXT("Client2 currentCombo = %d"), CurrentCombo);
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, CurWeaponMessage);
+		}
+	}*/
+	if (AdamAnim->GetbIsSprinting())
+		SetSprinting(false);
+	if (!HasAuthority())
+	{
+		switch (CurWeaponType) {
+		case EWeaponType::E_SWORDSHIELD:
+			if (bIsAttacking)
+			{
+				if (FMath::IsWithinInclusive<int32>(CurrentCombo, 1, MaxCombo))
+				{
+					if (bCanNextCombo)
+						bIsComboInputOn = true;
+				}
+			}
+			else
+			{
+				if (CurrentCombo == 0) {
+					AttackStartComboState();
+					AdamAnim->PlayAttackMontage(CurWeaponType);
+					AdamAnim->JumpToAttackMontageSection(CurrentCombo);
+					bIsAttacking = true;
+				}
+			}
+			break;
+		case EWeaponType::E_BOW: // 무기=활 일때
+			if (!bIsAttacking)
+			{
+				bIsAttacking = true;
+				Bow_Arrow = ArrowPool->GetPooledObject();
+				/*if(GetController() == nullptr)
+					UE_LOG(PalaceWorld, Error, TEXT("Player Controller is Null"));
+				if (0.0f == Bow_Arrow->getDamageByPlayerLevel())
+					Bow_Arrow->setArrowDataByPlayer(CharacterStat->GetAttack(),GetController());*/
+				//UE_LOG(PalaceWorld, Warning, TEXT("bIsAttacking is %d"), bIsAttacking);
+				SetArrowDamageData();
+				AdamAnim->PlayAttackMontage(CurWeaponType);
+			}
+			break;
+		}
+	}
+}
 
-//bool AAdamCharacter::SetCurrentWeaponMode_Validate(EWeaponType NewWeapon)
+//void AAdamCharacter::OnRep_CurrentComboMtgUpdate(int32 NewCurrentCombo)
 //{
-//	return true;
+//	CurrentCombo = NewCurrentCombo;
+//	AdamAnim->PlayAttackMontage(CurWeaponType);
+//	AdamAnim->JumpToAttackMontageSection(CurrentCombo);
+//	FString CurWeaponMessage = FString::Printf(TEXT("OnRep Called : CurrentCombo= %d"), CurrentCombo);
+//	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, CurWeaponMessage);
+//
 //}
+
+bool AAdamCharacter::SetAttackMtgByCurrentCombo_Validate(int32 NewCurrentCombo)
+{
+	return true;
+}
+
+void AAdamCharacter::SetAttackMtgByCurrentCombo_Implementation(int32 NewCurrentCombo)
+{
+	CurrentCombo = NewCurrentCombo;
+	
+	AdamAnim->PlayAttackMontage(CurWeaponType);
+	AdamAnim->JumpToAttackMontageSection(NewCurrentCombo);
+}
+
+bool AAdamCharacter::SetCurrentWeaponMode_Validate(EWeaponType NewWeapon)
+{
+	return true;
+}
 void AAdamCharacter::SetCurrentWeaponMode_Implementation(EWeaponType NewWeapon)
 {
 	////if (GetLocalRole() == ROLE_Authority) // 서버에서
@@ -564,10 +662,10 @@ void AAdamCharacter::ServerSetAimingArrow_Implementation(bool bNewAimingArrow)
 	SetAimingArrow(bNewAimingArrow);
 }
 
-void AAdamCharacter::OnRep_CurrentWeaponModeUpdate(EWeaponType NewWeapon)
-{
-	SetCurrentWeaponMode(NewWeapon);
-}
+//void AAdamCharacter::OnRep_CurrentWeaponModeUpdate(EWeaponType NewWeapon)
+//{
+//	SetCurrentWeaponMode(NewWeapon);
+//}
 bool AAdamCharacter::ServerSwitchWeaponMode_Validate(EWeaponType NewWeapon)
 {
 	return true;
@@ -605,44 +703,6 @@ float AAdamCharacter::GetSprintingSpeedModifier() const
 
 
 
-//void AAdamCharacter::StopSprinting()
-//{
-//	GetCharacterMovement()->MaxWalkSpeed = fWalkSpeed;
-//	AdamAnim->SetSprintAnim(false);
-//
-//	GetCharacterMovement()->MaxAcceleration = fAcceleration;
-//}
-
-
-
-//void AAdamCharacter::UseWeaponAbility()
-//{
-//	if (!bIsAttacking) {
-//		if (AdamAnim->GetbIsSprinting())
-//			SetSprinting(false);
-//		if (CurWeaponType == EWeaponType::E_SWORDSHIELD) // 방패막기
-//		{	
-//			AdamAnim->SetUsingShieldAnim(true);
-//		}
-//		else if (CurWeaponType == EWeaponType::E_BOW)
-//		{
-//			AdamAnim->SetAimingArrowAnim(true);
-//		}
-//	}
-//}
-//
-//void AAdamCharacter::StopWeaponAbility()
-//{
-//	if (CurWeaponType == EWeaponType::E_SWORDSHIELD) // 방패막기
-//	{
-//		AdamAnim->SetUsingShieldAnim(false);
-//	}
-//	else if (CurWeaponType == EWeaponType::E_BOW)
-//	{
-//		AdamAnim->SetAimingArrowAnim(false);
-//	}
-//}
-
 void AAdamCharacter::OnSwordAndShieldMode()
 {
 	AAdamPlayerController* MyPC = Cast<AAdamPlayerController>(Controller);
@@ -676,9 +736,22 @@ void AAdamCharacter::OnBowMode()
 	}
 }
 
-
-void AAdamCharacter::OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+bool AAdamCharacter::ServerDoBasicAttack_Validate()
 {
+	return true;
+}
+void AAdamCharacter::ServerDoBasicAttack_Implementation()
+{
+	DoBasicAttack();
+}
+
+void AAdamCharacter::OnAttackMontageEnded/*_Implementation*/(UAnimMontage* Montage, bool bInterrupted)
+{
+	/*if (HasAuthority())
+	{
+		FString CurWeaponMessage = FString::Printf(TEXT("server OnAttackMontageEnded called"));
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, CurWeaponMessage);
+	}*/
 	if (bIsAttacking) {
 		if (CurWeaponType == EWeaponType::E_SWORDSHIELD) {
 			if (CurrentCombo > 0) {
@@ -695,7 +768,27 @@ void AAdamCharacter::OnAttackMontageEnded(UAnimMontage* Montage, bool bInterrupt
 	{
 		AdamAnim->SetChangingWeapon(false);
 	}
-	
+}
+
+void AAdamCharacter::OnAttackNextAttackCheck/*_Implementation*/()
+{
+	/*if (HasAuthority())
+	{
+		FString CurWeaponMessage = FString::Printf(TEXT("server Animnotify OnNextAttackCheck called"));
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, CurWeaponMessage);
+	}
+	else
+	{
+		FString CurWeaponMessage = FString::Printf(TEXT("Client Animnotify OnNextAttackCheck called"));
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, CurWeaponMessage);
+	}*/
+	bCanNextCombo = false;
+
+	if (bIsComboInputOn)
+	{
+		AttackStartComboState();
+		AdamAnim->JumpToAttackMontageSection(CurrentCombo);
+	}
 }
 
 void AAdamCharacter::SwordTookOutCheck() // 델리게이트 함수
@@ -736,6 +829,17 @@ void AAdamCharacter::AttackEndComboState()
 	CurrentCombo = 0;
 }
 
+void AAdamCharacter::HitActorApplyDamage_Implementation(const FHitResult& HitResult)
+{
+	if (HasAuthority())
+		UE_LOG(PalaceWorld, Warning, TEXT("Melee Hit Actor Name : %s, Damage : %f, CharacterLevel:%d"), *HitResult.Actor->GetName(), CharacterStat->GetAttack(), CharacterStat->GetLevel());
+	if (GetController() == nullptr)
+		UE_LOG(PalaceWorld, Error, TEXT("Player Controller is Null"));
+	FDamageEvent DamageEvent;
+	if (HitResult.Actor->ActorHasTag(FName(TEXT("Monster"))))
+		HitResult.Actor->TakeDamage(CharacterStat->GetAttack(), DamageEvent, GetController(), this); // 전달할 데미지 세기, 데미지 종류, 공격 명령 내린 가해자(컨트롤러), 데미지 전달 위해 사용한 도구(폰)
+}
+
 void AAdamCharacter::AttackCheck()
 {
 	TArray<FHitResult> HitResults;
@@ -743,10 +847,10 @@ void AAdamCharacter::AttackCheck()
 	bool bResult = GetWorld()->SweepMultiByChannel(
 		HitResults,
 		GetActorLocation(),
-		GetActorLocation() + GetActorForwardVector() * 200.0f, //탐색 끝낼 위치: 액터 시선방향으로 200cm 떨어진 곳
+		GetActorLocation() + GetActorForwardVector() * AttackRange, //탐색 끝낼 위치: 액터 시선방향으로 200cm 떨어진 곳
 		FQuat::Identity,
 		ECollisionChannel::ECC_GameTraceChannel2,
-		FCollisionShape::MakeSphere(50.0f), // 탐지에 사용할 도형 : 반지름 50cm 구
+		FCollisionShape::MakeSphere(AttackRadius), // 탐지에 사용할 도형 : 반지름 50cm 구
 		Params);
 
 	// 콜리젼 디버그 드로잉
@@ -773,10 +877,13 @@ void AAdamCharacter::AttackCheck()
 		{
 			if (HitResult.Actor.IsValid())
 			{
-				UE_LOG(PalaceWorld, Warning, TEXT("Hit Actor Name : %s"), *HitResult.Actor->GetName());
+				//if(HasAuthority())
+				//	UE_LOG(PalaceWorld, Warning, TEXT("Melee Hit Actor Name : %s, Damage : %f, CharacterLevel:%d"), *HitResult.Actor->GetName(), CharacterStat->GetAttack(), CharacterStat->GetLevel());
 
-				FDamageEvent DamageEvent;
-				HitResult.Actor->TakeDamage(CharacterStat->GetAttack()/*나중에 몬스터 데미지로 수정해야됨*/, DamageEvent, GetController(), this); // 전달할 데미지 세기, 데미지 종류, 공격 명령 내린 가해자(컨트롤러), 데미지 전달 위해 사용한 도구(폰)
+				//FDamageEvent DamageEvent;
+				//if(HitResult.Actor->ActorHasTag(FName(TEXT("Monster"))))
+				//	HitResult.Actor->TakeDamage(CharacterStat->GetAttack(), DamageEvent, GetController(), this); // 전달할 데미지 세기, 데미지 종류, 공격 명령 내린 가해자(컨트롤러), 데미지 전달 위해 사용한 도구(폰)
+				HitActorApplyDamage(HitResult);
 			}
 		}
 	}
@@ -802,7 +909,41 @@ void AAdamCharacter::BowAttackShootArrowCheck()
 	Bow_Arrow->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	FVector LaunchDir = GetCapsuleComponent()->GetForwardVector();
 	Bow_Arrow->OnActivated(LaunchDir);
-	UE_LOG(PalaceWorld, Warning, TEXT("%s is On Activated"), *Bow_Arrow->GetName());
+	//UE_LOG(PalaceWorld, Warning, TEXT("%s is On Activated"), *Bow_Arrow->GetName());
+}
+
+void AAdamCharacter::SetArrowDamageData_Implementation()
+{
+	if (HasAuthority()) 
+	{
+		if (GetController() == nullptr)
+			UE_LOG(PalaceWorld, Error, TEXT("Player Controller is Null"));
+		if (ArrowPool->GetPooledObject() == nullptr) 
+		{
+			UE_LOG(PalaceWorld, Error, TEXT("Player Bow_Arrow is Null"));
+			return;
+		}
+		UE_LOG(PalaceWorld, Warning, TEXT("Player Controller Set : %s"), *GetController()->GetName());
+		ArrowPool->GetPooledObject()->SetOwner(this);
+		if (0.0f == ArrowPool->GetPooledObject()->getDamageByPlayerLevel())
+			ArrowPool->GetPooledObject()->setArrowDataByPlayer(CharacterStat->GetAttack(), GetController());
+	}
+	/*if (0.0f == Bow_Arrow->getDamageByPlayerLevel())
+		Bow_Arrow->setArrowDataByPlayer(CharacterStat->GetAttack(), GetController());*/
+	
+}
+
+void AAdamCharacter::HPIsZero()
+{
+	UE_LOG(PalaceWorld, Warning, TEXT("OnHPIsZero"));
+	bIsDying = true;
+	
+	//if (IsLocallyControlled())
+		//GetController()->DisableInput(Cast<AAdamPlayerController>(GetController()));
+		//Cast<AAdamPlayerController>(GetController())->SetInputMode();
+	SetReplicatingMovement(false);
+	AdamAnim->SetDeadAnim();
+	SetActorEnableCollision(false);
 }
 
 
@@ -820,5 +961,7 @@ void AAdamCharacter::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& Out
 
 
 	// 모두에게
-	//DOREPLIFETIME(AAdamCharacter, CurWeaponType);
+	DOREPLIFETIME(AAdamCharacter, bIsAttacking);
+	DOREPLIFETIME(AAdamCharacter, CharacterStat);
+
 }

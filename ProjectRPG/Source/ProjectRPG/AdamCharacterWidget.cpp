@@ -28,6 +28,7 @@ void UAdamCharacterWidget::UpdateHPWidget()
 {
 	if (CurrentCharacterStat.IsValid())
 	{
+		//UE_LOG(PalaceWorld, Warning, TEXT("UpdateHPWidget Called"));
 		if (nullptr != HPProgressBar)
 		{
 			HPProgressBar->SetPercent(CurrentCharacterStat->GetHPRatio());

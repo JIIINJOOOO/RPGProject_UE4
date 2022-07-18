@@ -11,7 +11,8 @@
 #include "AdamCharacterStatComponent.h"
 #include "RampageAnimInstance.h"
 #include "MonsterAIController.h"
-
+#include "Net/UnrealNetwork.h"
+//#include "DrawDebugHelpers.h"
 
 
 // Sets default values
@@ -20,6 +21,8 @@ APalaceRampageMonster::APalaceRampageMonster()
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 	bIsAttacking = false;
+	AttackRange = 200.0f;
+	AttackRadius = 50.0f;
 	CharacterStat = CreateDefaultSubobject<UAdamCharacterStatComponent>(TEXT("CHARACTERSTAT"));
 	HPBarWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("HPBARWIDGET"));
 	
@@ -76,6 +79,17 @@ void APalaceRampageMonster::BeginPlay()
 	{
 		CharacterWidget->BindCharacterStat(CharacterStat);
 	}
+	Tags.Add(FName("Monster"));
+
+	if (HasAuthority())
+	{
+		SetReplicates(true);
+		SetReplicateMovement(true);
+		//GetCharacterMovement()->SetIsReplicated(true);
+		CharacterStat->SetIsReplicated(true);
+	}
+	CharacterStat->SetNewLevel(1);
+
 }
 
 // Called every frame
@@ -119,7 +133,9 @@ void APalaceRampageMonster::PostInitializeComponents()
 float APalaceRampageMonster::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
 	float FinalDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-	UE_LOG(PalaceWorld, Warning, TEXT("Actor: %s / Took Dmg: %f"), *GetName(), FinalDamage);
+	
+	//if(HasAuthority())
+		UE_LOG(PalaceWorld, Warning, TEXT("MonsterTakeDamageCalled / Took Dmg: %f / CurrentHP:%f"), *GetName(), FinalDamage, CharacterStat->GetHPRatio());
 
 	CharacterStat->SetDamage(FinalDamage);
 	return FinalDamage;
@@ -141,10 +157,10 @@ void APalaceRampageMonster::AttackCheck()
 	bool bResult = GetWorld()->SweepSingleByChannel(
 		HitResult,
 		GetActorLocation(),
-		GetActorLocation() + GetActorForwardVector() * 200.0f, //탐색 끝낼 위치: 액터 시선방향으로 200cm 떨어진 곳
+		GetActorLocation() + GetActorForwardVector() * AttackRange, //탐색 끝낼 위치: 액터 시선방향으로 200cm 떨어진 곳
 		FQuat::Identity,
 		ECollisionChannel::ECC_GameTraceChannel2,
-		FCollisionShape::MakeSphere(50.0f), // 탐지에 사용할 도형 : 반지름 50cm 구
+		FCollisionShape::MakeSphere(AttackRadius), // 탐지에 사용할 도형 : 반지름 50cm 구
 		Params);
 
 	// 콜리젼 디버그 드로잉
@@ -169,9 +185,10 @@ void APalaceRampageMonster::AttackCheck()
 	{
 		if (HitResult.Actor.IsValid())
 		{
-			UE_LOG(PalaceWorld, Warning, TEXT("Hit Actor Name : %s"), *HitResult.Actor->GetName());
+			//UE_LOG(PalaceWorld, Warning, TEXT("Hit Actor Name : %s"), *HitResult.Actor->GetName());
 
 			FDamageEvent DamageEvent;
+			//UGameplayStatics::ApplyDamage(OutActors[i], Damage, GetController(), nullptr, NULL);
 			HitResult.Actor->TakeDamage(CharacterStat->GetAttack()/*나중에 몬스터 데미지로 수정해야됨*/, DamageEvent, GetController(), this); // 전달할 데미디 세기, 데미지 종류, 공격 명령 내린 가해자(컨트롤러), 데미지 전달 위해 사용한 도구(폰)
 		}
 	}
@@ -207,3 +224,15 @@ void APalaceRampageMonster::OnAttackMontageEnded(UAnimMontage* Montage, bool bIn
 	}
 }
 
+void APalaceRampageMonster::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// everyone except local owner: flag change is locally instigated
+	//DOREPLIFETIME_CONDITION(AAdamCharacter, bIsSprinting, COND_SkipOwner);
+
+
+	// 모두에게
+	DOREPLIFETIME(APalaceRampageMonster, CharacterStat);
+
+}
